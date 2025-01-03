@@ -24,75 +24,92 @@
 """
 
 import Domoticz
-import requests
 import xml.etree.ElementTree as ET
 
 class SteamPlugin:
     def __init__(self):
         self.steam_id = ""
-        self.steam_api_url = "https://steamcommunity.com/id/{}/?xml=1"
-        self.initialized = False
+        self.steam_api_host = "steamcommunity.com"
+        self.steam_api_path = "/id/{}/?xml=1"
         self.STEAM_ICON_ID = "steam"
-    
+        self.connection = None
+        self.initialized = False
+
     def onStart(self):
         Domoticz.Debugging(int(Parameters["Mode6"]))
-        Domoticz.Log("SteamPlugin: onStart called")
+        Domoticz.Log("onStart called")
         self.steam_id = Parameters["Mode1"]
-        
+
         # Load custom icons
         self.loadIcons(Images)
-        
+
         if not self.steam_id:
-            Domoticz.Error("SteamPlugin: SteamId not provided")
+            Domoticz.Error("SteamId not provided")
             return
+
+        # Initialize connection
+        self.connection = Domoticz.Connection(
+            Name="SteamConnection",
+            Transport="TCP/IP",
+            Protocol="HTTPS",
+            Address=self.steam_api_host,  # Only the hostname here
+            Port="443",  # Port as a string
+        )
         
-        # Fetch API details and initialize
-        if self.fetchSteamDetails():
-            self.initialized = True
-            Domoticz.Heartbeat(30)
-        else:
-            Domoticz.Error("SteamPlugin: Failed to initialize. Could not fetch Steam details.")
-            
+        self.connection.Connect()
+        self.initialized = True
+        Domoticz.Heartbeat(30)
+
     def loadIcons(self, Images):
         """Load the custom Steam icon."""
         if self.STEAM_ICON_ID in Images:
             Domoticz.Debug(f"SteamIcon ID found: {Images[self.STEAM_ICON_ID].ID}")
         else:
             Domoticz.Image("Steam-Icons.zip").Create()
-            Domoticz.Log("SteamPlugin: SteamIcon added from Steam-Icons.zip")
-        Domoticz.Log(f"Available icons in Images: {list(Images.keys())}") 
+            Domoticz.Log("SteamIcon added from Steam-Icons.zip")
 
-    def fetchSteamDetails(self):
-        """Fetch Steam API details, create or update a selector switch device for Steam status and a text device for the game name."""
-        url = self.steam_api_url.format(self.steam_id)
-        
+    def onConnect(self, connection, status, description):
+        """Handle the response from the connection."""
+        if status != 0:
+            Domoticz.Error(f"Connection failed with status {status} ({description})")
+            return
+
+        Domoticz.Log("Steam connected called")
         try:
-            response = requests.get(url)
-            response.raise_for_status()
-            
-            # Parse the XML
-            tree = ET.ElementTree(ET.fromstring(response.content))
+            # Send the GET request
+            connection.Send({
+                "Verb": "GET",
+                "URL": self.steam_api_path.format(self.steam_id),  # Path only
+                "Headers": {
+                    "Host": self.steam_api_host,
+                    "User-Agent": "DomoticzPlugin"
+                }
+            })
+
+        except Exception as e:
+            Domoticz.Error(f"Error sending request: {str(e)}")
+
+    def onMessage(self, connection, data):
+        """Handle the response data."""
+        try:
+            response = data["Data"].decode("utf-8")
+            # Parse the response XML
+            tree = ET.ElementTree(ET.fromstring(response))
             root = tree.getroot()
-            
+
             # Extract data from the XML
             steam_name = root.find("steamID").text
             online_state = root.find("onlineState").text
             state_message = root.find("stateMessage").text
-            
-            # Log the parsed values
-            Domoticz.Log(f"SteamPlugin: Extracted steam_name: {steam_name}")
-            Domoticz.Log(f"SteamPlugin: Extracted online_state: {online_state}")
-            Domoticz.Log(f"SteamPlugin: Extracted state_message: {state_message}")
-            
+
             # Extract the game name from the stateMessage (after <br/>)
             game_name = "No Game"
             if state_message:
                 game_name = state_message.split('<br/>')[1] if '<br/>' in state_message else "No Game"
-            Domoticz.Log(f"SteamPlugin: Extracted game_name: {game_name}")
-            
+
             # Device name
             device_name = f"{steam_name} Status"
-            
+
             # Selector levels mapping
             selector_levels = {"offline": 0, "online": 10, "in-game": 20}
             level_names = "Offline|Online|In-Game"
@@ -110,54 +127,51 @@ class SteamPlugin:
                     Unit=1,
                     TypeName="Selector Switch",
                     Options=Options,
-                    Image=Images[self.STEAM_ICON_ID].ID,  # Use the custom Steam icon
+                    Image=Images[self.STEAM_ICON_ID].ID,
                 ).Create()
-                Domoticz.Log(f"SteamPlugin: Created selector switch device '{device_name}'")
-            
+
             # Check if the game name text device exists; if not, create it
             if 2 not in Devices:
                 Domoticz.Device(
                     Name=f"{steam_name} Game Name",
                     Unit=2,
                     TypeName="Text",
-                    Image=Images[self.STEAM_ICON_ID].ID,  # Use the custom Steam icon
+                    Image=Images[self.STEAM_ICON_ID].ID,
                 ).Create()
-                Domoticz.Log(f"SteamPlugin: Created text device for game name '{steam_name} Game Name'")
 
             # Determine the selector level
             level = selector_levels.get(online_state.lower(), 0)
-            
-            # Create sValue with level name and game (for In-Game state)
-            level_name = level_names.split("|")[level // 10]  # Get the level name
-            sValue = f"{level_name}: {game_name}" if level == 20 else level_name
-            
-            # Update the selector switch
-            Devices[1].Update(nValue=level, sValue=f"{level}")
-            Domoticz.Log(f"SteamPlugin: Updated device with nValue={level}, sValue='{sValue}'")
-            
-            # If in-game, update the game name in the text device
-            if level == 20:
-                Devices[2].Update(nValue=0, sValue=game_name)  # Update text device with game name
-                Domoticz.Log(f"SteamPlugin: Updated game name text device with value '{game_name}'")
-            
-            return True
-        
-        except requests.RequestException as e:
-            Domoticz.Error(f"SteamPlugin: Error fetching Steam data: {str(e)}")
-        except ET.ParseError as e:
-            Domoticz.Error(f"SteamPlugin: Error parsing XML data: {str(e)}")
-        return False
+            sValue = f"In-Game: {game_name}" if level == 20 else level_names.split("|")[level // 10]
 
+            # Update the selector switch only if the state has changed
+            if Devices[1].nValue != level or Devices[1].sValue != sValue:
+                Devices[1].Update(nValue=level, sValue=f"{level}")
+                Domoticz.Log(f"Updated device with nValue={level}, sValue='{level}'")
+
+            # Update the game name text device only if the game name has changed
+            if level == 20 and Devices[2].sValue != game_name:
+                Devices[2].Update(nValue=0, sValue=game_name)
+                Domoticz.Log(f"Updated game name text device with value '{game_name}'")
+
+        except Exception as e:
+            Domoticz.Error(f"Error processing response: {str(e)}")
 
     def onStop(self):
-        Domoticz.Log("SteamPlugin: Stopped")
+        Domoticz.Log("onStop called")
 
     def onHeartbeat(self):
         if not self.initialized:
-            Domoticz.Error("SteamPlugin: Plugin not properly initialized. Skipping heartbeat.")
+            Domoticz.Log("Plugin not initialized yet")
             return
-        Domoticz.Log("SteamPlugin: Heartbeat called")
-        self.fetchSteamDetails()
+
+        self.connection = Domoticz.Connection(
+            Name="SteamConnection",
+            Transport="TCP/IP",
+            Protocol="HTTPS",
+            Address=self.steam_api_host,
+            Port="443",
+        )
+        self.connection.Connect()
 
 
 global _plugin
@@ -170,6 +184,14 @@ def onStart():
 def onStop():
     global _plugin
     _plugin.onStop()
+
+def onConnect(Connection, Status, Description):
+    global _plugin
+    _plugin.onConnect(Connection, Status, Description)
+
+def onMessage(Connection, Data):
+    global _plugin
+    _plugin.onMessage(Connection, Data)
 
 def onHeartbeat():
     global _plugin
