@@ -1,4 +1,5 @@
 
+
 # Domoticz Steam Plugin 🎮
 
 **Plugin for Integrating Steam Status with Domoticz**
@@ -33,12 +34,7 @@ Easily monitor your Steam status within the Domoticz interface! This plugin fetc
 -   **SteamID:** Your unique SteamID. For instructions on finding your SteamID, visit: [SteamID Help](https://help.steampowered.com/en/faqs/view/2816-BE67-5B69-0FEC).
 -   **Debug Level:** Choose the level of debug information you want to receive.
 
-### Devices
-
-The plugin creates two devices:
-![SteamStatus](https://github.com/user-attachments/assets/794cb2ce-c8b9-4516-9737-db51f2d2a78f)
-
-![LatestGame](https://github.com/user-attachments/assets/32119072-ecf8-4dc5-b5d5-224bddab7b22)
+![SteamStatus](https://github.com/user-attachments/assets/794cb2ce-c8b9-4516-9737-db51f2d2a78f)![LatestGame](https://github.com/user-attachments/assets/32119072-ecf8-4dc5-b5d5-224bddab7b22)
 
 
 ## 🚀 Usage
