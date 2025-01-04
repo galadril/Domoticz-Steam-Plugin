@@ -23,6 +23,7 @@
 </plugin>
 """
 
+import time
 import Domoticz
 import xml.etree.ElementTree as ET
 
@@ -40,6 +41,9 @@ class SteamPlugin:
         Domoticz.Log("onStart called")
         self.steam_id = Parameters["Mode1"]
 
+        # Log the Steam ID being used
+        Domoticz.Log(f"Using Steam ID: {self.steam_id}")
+
         # Load custom icons
         self.loadIcons(Images)
 
@@ -52,13 +56,13 @@ class SteamPlugin:
             Name="SteamConnection",
             Transport="TCP/IP",
             Protocol="HTTPS",
-            Address=self.steam_api_host,  # Only the hostname here
-            Port="443",  # Port as a string
+            Address=self.steam_api_host,
+            Port="443",
         )
         
         self.connection.Connect()
         self.initialized = True
-        Domoticz.Heartbeat(60)
+        Domoticz.Heartbeat(30)
 
     def loadIcons(self, Images):
         """Load the custom Steam icon."""
@@ -74,15 +78,21 @@ class SteamPlugin:
             Domoticz.Error(f"Connection failed with status {status} ({description})")
             return
 
-        Domoticz.Log("Steam connected called")
+        Domoticz.Log("Steam connected successfully")
         try:
+             # Add a unique query parameter to prevent caching
+            timestamp = int(time.time())  # Current time in seconds
+            url = f"{self.steam_api_path.format(self.steam_id)}&nocache={timestamp}"
+            
             # Send the GET request
             connection.Send({
                 "Verb": "GET",
-                "URL": self.steam_api_path.format(self.steam_id),  # Path only
+                "URL": url,
                 "Headers": {
                     "Host": self.steam_api_host,
-                    "User-Agent": "DomoticzPlugin"
+                    "User-Agent": "DomoticzPlugin",
+                    "Cache-Control": "no-cache",  # Prevent caching
+                    "Pragma": "no-cache"         # HTTP/1.0 backward compatibility
                 }
             })
 
@@ -93,14 +103,18 @@ class SteamPlugin:
         """Handle the response data."""
         try:
             response = data["Data"].decode("utf-8")
+            
             # Parse the response XML
             tree = ET.ElementTree(ET.fromstring(response))
             root = tree.getroot()
 
             # Extract data from the XML
-            steam_name = root.find("steamID").text
-            online_state = root.find("onlineState").text
-            state_message = root.find("stateMessage").text
+            online_state = root.find("onlineState").text if root.find("onlineState") is not None else None
+            state_message = root.find("stateMessage").text if root.find("stateMessage") is not None else "No State Message"
+            steam_name = root.find("steamID").text if root.find("steamID") is not None else "Unknown User"
+            
+            # Debug parsed values
+            Domoticz.Log(f"Parsed onlineState: {online_state}, stateMessage: {state_message}")
 
             # Extract the game name from the stateMessage (after <br/>)
             game_name = "No Game"
@@ -140,17 +154,23 @@ class SteamPlugin:
                 ).Create()
 
             # Determine the selector level
-            level = selector_levels.get(online_state.lower(), 0)
+            level = selector_levels.get(online_state.lower(), 0) if online_state else 0
             sValue = f"In-Game: {game_name}" if level == 20 else level_names.split("|")[level // 10]
-            Domoticz.Log(f"Found Steam status={sValue}")
+            Domoticz.Log(f"Determined Steam status: {sValue}")
 
             # Update the selector switch only if the state has changed
-            Devices[1].Update(nValue=level, sValue=f"{level}")
-            Domoticz.Log(f"Updated device with nValue={level}, sValue='{level}'")
+            if Devices[1].nValue != level or Devices[1].sValue != f"{level}":
+                Devices[1].Update(nValue=level, sValue=f"{level}")
+                Domoticz.Log(f"Updated selector device to nValue={level}, sValue='{level}'")
+            else:
+                Domoticz.Debug("Selector device already at correct level, no update needed")
 
             # Update the game name text device only if the game name has changed
-            Devices[2].Update(nValue=0, sValue=game_name)
-            Domoticz.Log(f"Updated game name text device with value '{game_name}'")
+            if Devices[2].sValue != game_name:
+                Devices[2].Update(nValue=0, sValue=game_name)
+                Domoticz.Log(f"Updated game name text device with value '{game_name}'")
+            else:
+                Domoticz.Debug("Game name device already has the correct value, no update needed")
 
         except Exception as e:
             Domoticz.Error(f"Error processing response: {str(e)}")
