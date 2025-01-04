@@ -58,7 +58,7 @@ class SteamPlugin:
         
         self.connection.Connect()
         self.initialized = True
-        Domoticz.Heartbeat(30)
+        Domoticz.Heartbeat(60)
 
     def loadIcons(self, Images):
         """Load the custom Steam icon."""
