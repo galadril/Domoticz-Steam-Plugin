@@ -158,19 +158,19 @@ class SteamPlugin:
             sValue = f"In-Game: {game_name}" if level == 20 else level_names.split("|")[level // 10]
             Domoticz.Log(f"Determined Steam status: {sValue}")
 
-            # Update the selector switch only if the state has changed
-            if Devices[1].nValue != level or Devices[1].sValue != f"{level}":
-                Devices[1].Update(nValue=level, sValue=f"{level}")
-                Domoticz.Log(f"Updated selector device to nValue={level}, sValue='{level}'")
-            else:
-                Domoticz.Debug("Selector device already at correct level, no update needed")
-
             # Update the game name text device only if the game name has changed
             if Devices[2].sValue != game_name:
                 Devices[2].Update(nValue=0, sValue=game_name)
                 Domoticz.Log(f"Updated game name text device with value '{game_name}'")
             else:
                 Domoticz.Debug("Game name device already has the correct value, no update needed")
+
+            # Update the selector switch only if the state has changed
+            if Devices[1].nValue != level or Devices[1].sValue != f"{level}":
+                Devices[1].Update(nValue=level, sValue=f"{level}")
+                Domoticz.Log(f"Updated selector device to nValue={level}, sValue='{level}'")
+            else:
+                Domoticz.Debug("Selector device already at correct level, no update needed")
 
         except Exception as e:
             Domoticz.Error(f"Error processing response: {str(e)}")
