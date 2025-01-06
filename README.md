@@ -54,6 +54,7 @@ When you are in-game, the text device will automatically update with the name of
 | Version | Information |
 | ------- | ----------- |
 |   0.0.1 | Initial version |
+|   0.0.2 | Cache fixes on fetching Steam status |
 
 
 ## 🚀 Updates and Contributions
